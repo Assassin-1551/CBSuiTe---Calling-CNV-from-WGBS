@@ -5,7 +5,7 @@ import pandas as pd
 from tqdm import tqdm
 import argparse
 
-from utils import message, chr_encode, label_encode_str, filter_lowqua_data
+from utils import message, chr_encode, label_encode_str, filter_lowqua_data, calculate_mean_std
 
 
 description = "hi"
@@ -27,6 +27,8 @@ readdepths_path = args.readdepth
 os.makedirs(args.output, exist_ok=True)
 output_path = args.output
 
+cur_dirname = os.path.dirname(__file__)
+
 if args.downsample:
     down = args.downsample
     readdepths_file = [file for file in listdir(readdepths_path) 
@@ -35,6 +37,8 @@ else:
     readdepths_file = [file for file in listdir(readdepths_path) if not file.startswith('.')]
 #message(f"readdepths_file: {readdepths_file}")
 readdepths_file.sort()
+methy_file = [file for file in listdir(args.methy) if not file.startswith('.') and file.endswith('.bed')]
+methy_file.sort()
 
 binsize = 100000
 depthsize = 100
@@ -61,7 +65,7 @@ for chromosome, length in chromosome_lengths.items():
 target_data = target_data[~np.all(target_data == 0, axis=1)]
 print('target_data: ',np.shape(target_data))
 
-gc_data = pd.read_csv('GC_100K_noxy.bed', sep="\t")
+gc_data = pd.read_csv('./demo_data/gc/GC.bed', sep="\t")
 gc_values = gc_data.iloc[:, 4]
 gc_values = np.array(gc_values).reshape(-1, 1)
 print('gc_values: ',np.shape(gc_values))
@@ -73,11 +77,9 @@ for i, file_name in enumerate(readdepths_file):
 
     name_list = [sample_name] * len(target_data)
     print('name_list: ',np.shape(name_list))
+    
+    methy_path = methy_file[i]
 
-    methy_path = os.path.join(args.methy, sample_name + '_methy.bed')
-    if not os.path.exists(methy_path):          # 检查文件是否存在
-        print('no methy information, continue')
-        continue
     for i in range(1, 23):
         array_name = f'methy_{i}'
         array_length = chromosome_lengths[i] // depthsize + 1
@@ -92,7 +94,7 @@ for i, file_name in enumerate(readdepths_file):
     }
     # 读取read depth 文件，并写入对应染色体的对应位置
     message(f"methy_files: {methy_path}")
-    with open(methy_path, 'r') as f:
+    with open(os.path.join(args.methy, methy_path), 'r') as f:
         header = next(f)
         for line in f:
             value = line.strip().split('\t')
@@ -132,8 +134,8 @@ for i, file_name in enumerate(readdepths_file):
     with open(file_path, 'r') as f:
         header = next(f)
         for line in f:
-            value = line.strip().split('\t')[:5]
-            chr, pos, dep = chr_encode(value[0]), int(int(value[1])//depthsize), float(value[4])
+            value = line.strip().split('\t')[:4]
+            chr, pos, dep = chr_encode(value[0]), int(int(value[1])//depthsize), float(value[3])
             if int(chr) > 22:
                 break
             depth_cur = depth_dict.get(int(chr))
@@ -194,3 +196,10 @@ for i, file_name in enumerate(readdepths_file):
         np.save(os.path.join(output_path, f"{sample_name}_final_data.npy"), final_data)
     print(f'{sample_name} preprocess complete!')
     print("____________________")
+
+
+mean, std = calculate_mean_std(output_path)
+
+with open("germline_stats.txt", 'w') as f:
+    f.write(f"{mean},{std}")
+    f.close()
